@@ -239,7 +239,7 @@ export default function App() {
     const res = await fetch("/api/mint", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ownerId: formData.email }),
+      body: JSON.stringify({ ownerId: formData.email, img: editor.canvas.toSVG() }),
     });
     const json = await res.json();
     if (json.success) {

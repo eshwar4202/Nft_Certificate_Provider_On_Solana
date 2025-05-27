@@ -28,6 +28,8 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-fabric": "^0.4.1",
+    "sharp": "^0.34.2",
+    "svg-to-img": "^2.0.9",
     "tailwind-merge": "^3.2.0",
     "uuid": "^11.1.0"
   },

@@ -22,9 +22,10 @@ import { clusterApiUrl, Connection, LAMPORTS_PER_SOL } from "@solana/web3.js";
 import { promises as fs } from "fs";
 import * as path from "path";
 import { PublicKey } from "@solana/web3.js";
+import sharp from "sharp";
 // create a new connection to Solana's devnet clusterApiUrl
 //
-export async function mintNft(ownerid: String) {
+export async function mintNft(ownerid: String, svgstr: String) {
   const owner = new PublicKey(ownerid);
   const connection = new Connection(clusterApiUrl("devnet"));
 
@@ -52,7 +53,7 @@ export async function mintNft(ownerid: String) {
     .use(irysUploader());
 
   // Substitute in your collection NFT address from create-metaplex-nft-collection.ts
-  const collectionNftAddress = UMIPublicKey("D2zi1QQmtZR5fk7wpA1Fmf6hTY2xy8xVMyNgfq6LsKy1");
+  const collectionNftAddress = UMIPublicKey("4GDeLZGnNkSkM9hzMARMS2EoFeKacUeXBuXUSVMXrfpD");
 
   // example data and metadata for our NFT
   const nftData = {
@@ -66,9 +67,10 @@ export async function mintNft(ownerid: String) {
 
 
   const NFTImagePath = path.resolve(__dirname, "/home/esh/projects/figma_clone/figma_clone/nft.png");
+  const buff = await sharp(Buffer.from(svgstr)).png().toBuffer();
 
   const buffer = await fs.readFile(NFTImagePath);
-  let file = createGenericFile(buffer, NFTImagePath, {
+  let file = createGenericFile(buff, "nft.png", {
     contentType: "image/png",
   });
 
@@ -98,7 +100,7 @@ export async function mintNft(ownerid: String) {
     updateAuthority: umi.identity.publicKey,
     sellerFeeBasisPoints: percentAmount(0),
     collection: {
-      key: collectionAddress,
+      key: collectionNftAddress,
       verified: false,
     },
     tokenOwner: owner,
