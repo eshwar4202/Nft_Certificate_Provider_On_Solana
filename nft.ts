@@ -1,68 +1,75 @@
-// See https://developers.metaplex.com/token-metadata
-// and https://developers.metaplex.com/token-metadata/collections#associating-nfts-to-collection-nfts
 import {
   createNft,
-  fetchDigitalAsset,
+  findMetadataPda,
   mplTokenMetadata,
+  verifyCollectionV1,
 } from "@metaplex-foundation/mpl-token-metadata";
+import {
+  createGenericFile,
+  generateSigner,
+  keypairIdentity,
+  percentAmount,
+  publicKey as UMIPublicKey,
+} from "@metaplex-foundation/umi";
+import { createUmi } from "@metaplex-foundation/umi-bundle-defaults";
+import { irysUploader } from "@metaplex-foundation/umi-uploader-irys";
 import {
   airdropIfRequired,
   getExplorerLink,
   getKeypairFromFile,
 } from "@solana-developers/helpers";
-import { createUmi } from "@metaplex-foundation/umi-bundle-defaults";
-import {
-  generateSigner,
-  keypairIdentity,
-  createGenericFile,
-  percentAmount,
-  publicKey,
-} from "@metaplex-foundation/umi";
-import {
-  Connection,
-  LAMPORTS_PER_SOL,
-  PublicKey,
-  clusterApiUrl,
-} from "@solana/web3.js";
-import sharp from "sharp"
-
-
-export async function mintNft(ownerid: string, svgstr: string) {
-
+import { clusterApiUrl, Connection, LAMPORTS_PER_SOL } from "@solana/web3.js";
+import { promises as fs } from "fs";
+import * as path from "path";
+import { PublicKey } from "@solana/web3.js";
+import sharp from "sharp";
+// create a new connection to Solana's devnet clusterApiUrl
+//
+export async function mintNft(ownerid: String, svgstr: String) {
   const owner = new PublicKey(ownerid);
-
-  // create a new connection to the cluster's API
   const connection = new Connection(clusterApiUrl("devnet"));
 
-  // initialize a keypair for the user
+  // load keypair from local file system
+  // assumes that the keypair is already generated using `solana-keygen new`
   const user = await getKeypairFromFile();
+  console.log("Loaded user:", user.publicKey.toBase58());
 
   await airdropIfRequired(
     connection,
     user.publicKey,
     1 * LAMPORTS_PER_SOL,
-    0.1 * LAMPORTS_PER_SOL
+    0.1 * LAMPORTS_PER_SOL,
   );
 
-  console.log("Loaded user:", user.publicKey.toBase58());
+  const umi = createUmi(connection);
 
-  // Create Umi Instance, using the same endpoint as our connection,
-  // and using our user to sign transactions
-  const umi = createUmi(connection.rpcEndpoint).use(mplTokenMetadata());
+  // convert to umi compatible keypair
   const umiKeypair = umi.eddsa.createKeypairFromSecretKey(user.secretKey);
-  umi.use(keypairIdentity(umiKeypair));
 
-  // We could do
-  //   const collectionAddress = new PublicKey();
-  // to make a web.js PublicKey, and then use
-  //   publicKey(collectionAddress)
-  // to convert it to a Umi PublicKey
-  // but we can also just make the a Umi publicKey directly
-  // using the Umi publicKey() function
-  const collectionAddress = publicKey("4GDeLZGnNkSkM9hzMARMS2EoFeKacUeXBuXUSVMXrfpD");
+  // load our plugins and signer
+  umi
+    .use(keypairIdentity(umiKeypair))
+    .use(mplTokenMetadata())
+    .use(irysUploader());
 
-  const buff = await sharp(Buffer.from(svgstr)).png().toBuffer();
+  // Substitute in your collection NFT address from create-metaplex-nft-collection.ts
+  const collectionNftAddress = UMIPublicKey("4GDeLZGnNkSkM9hzMARMS2EoFeKacUeXBuXUSVMXrfpD");
 
+  // example data and metadata for our NFT
+  const nftData = {
+    name: "My NFT",
+    symbol: "MN",
+    description: "My NFT Description",
+    sellerFeeBasisPoints: 0,
+    imageFile: "nft.png",
+    tokenOwner: owner,
+  };
+
+
+  const NFTImagePath = path.resolve(__dirname, "/home/esh/projects/figma_clone/figma_clone/nft.png");
+  const buff = await sharp(Buffer.from(svgstr)).flatten({ background: "#ffffff" }).png().toBuffer();
+
+  const buffer = await fs.readFile(NFTImagePath);
   let file = createGenericFile(buff, "nft.png", {
     contentType: "image/png",
   });
@@ -71,6 +78,7 @@ export async function mintNft(ownerid: string, svgstr: string) {
   const [image] = await umi.uploader.upload([file]);
   console.log("image uri:", image);
 
+  // upload offchain json using irys and get metadata uri
   const uri = await umi.uploader.uploadJson({
     name: "My NFT",
     symbol: "MN",
@@ -80,33 +88,27 @@ export async function mintNft(ownerid: string, svgstr: string) {
   console.log("NFT offchain metadata URI:", uri);
 
 
-  // Generate an NFT
-  console.log(`Creating NFT...`);
+  // generate mint keypair
   const mint = generateSigner(umi);
-  const transaction = await createNft(umi, {
+
+  // create and mint NFT
+  await createNft(umi, {
     mint,
     name: "My NFT",
-    // See https://developers.metaplex.com/token-metadata/token-standard#the-non-fungible-standard
+    symbol: "MN",
     uri,
+    updateAuthority: umi.identity.publicKey,
     sellerFeeBasisPoints: percentAmount(0),
     collection: {
-      // See https://developers.metaplex.com/umi/public-keys-and-signers
-      key: collectionAddress,
+      key: collectionNftAddress,
       verified: false,
     },
-  });
+  }).sendAndConfirm(umi, { send: { commitment: "finalized" } });
 
-  await transaction.sendAndConfirm(umi);
+  let explorerLink = getExplorerLink("address", mint.publicKey, "devnet");
+  console.log(`Token Mint:  ${explorerLink}`);
+  await fs.writeFile("test-output.png", buff);
 
-  const createdNft = await fetchDigitalAsset(umi, mint.publicKey);
 
-  console.log(
-    `✨🖼️ Created NFT! Address is: ${getExplorerLink(
-      "address",
-      createdNft.mint.publicKey,
-      "devnet"
-    )}`
-  );
-
-  console.log("✅ Finished successfully!");
 }
+
