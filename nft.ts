@@ -1,75 +1,68 @@
+// See https://developers.metaplex.com/token-metadata
+// and https://developers.metaplex.com/token-metadata/collections#associating-nfts-to-collection-nfts
 import {
   createNft,
-  findMetadataPda,
+  fetchDigitalAsset,
   mplTokenMetadata,
-  verifyCollectionV1,
 } from "@metaplex-foundation/mpl-token-metadata";
-import {
-  createGenericFile,
-  generateSigner,
-  keypairIdentity,
-  percentAmount,
-  publicKey as UMIPublicKey,
-} from "@metaplex-foundation/umi";
-import { createUmi } from "@metaplex-foundation/umi-bundle-defaults";
-import { irysUploader } from "@metaplex-foundation/umi-uploader-irys";
 import {
   airdropIfRequired,
   getExplorerLink,
   getKeypairFromFile,
 } from "@solana-developers/helpers";
-import { clusterApiUrl, Connection, LAMPORTS_PER_SOL } from "@solana/web3.js";
-import { promises as fs } from "fs";
-import * as path from "path";
-import { PublicKey } from "@solana/web3.js";
-import sharp from "sharp";
-// create a new connection to Solana's devnet clusterApiUrl
-//
-export async function mintNft(ownerid: String, svgstr: String) {
+import { createUmi } from "@metaplex-foundation/umi-bundle-defaults";
+import {
+  generateSigner,
+  keypairIdentity,
+  createGenericFile,
+  percentAmount,
+  publicKey,
+} from "@metaplex-foundation/umi";
+import {
+  Connection,
+  LAMPORTS_PER_SOL,
+  PublicKey,
+  clusterApiUrl,
+} from "@solana/web3.js";
+import sharp from "sharp"
+
+
+export async function mintNft(ownerid: string, svgstr: string) {
+
   const owner = new PublicKey(ownerid);
+
+  // create a new connection to the cluster's API
   const connection = new Connection(clusterApiUrl("devnet"));
 
-  // load keypair from local file system
-  // assumes that the keypair is already generated using `solana-keygen new`
+  // initialize a keypair for the user
   const user = await getKeypairFromFile();
-  console.log("Loaded user:", user.publicKey.toBase58());
 
   await airdropIfRequired(
     connection,
     user.publicKey,
     1 * LAMPORTS_PER_SOL,
-    0.1 * LAMPORTS_PER_SOL,
+    0.1 * LAMPORTS_PER_SOL
   );
 
-  const umi = createUmi(connection);
+  console.log("Loaded user:", user.publicKey.toBase58());
 
-  // convert to umi compatible keypair
+  // Create Umi Instance, using the same endpoint as our connection,
+  // and using our user to sign transactions
+  const umi = createUmi(connection.rpcEndpoint).use(mplTokenMetadata());
   const umiKeypair = umi.eddsa.createKeypairFromSecretKey(user.secretKey);
+  umi.use(keypairIdentity(umiKeypair));
 
-  // load our plugins and signer
-  umi
-    .use(keypairIdentity(umiKeypair))
-    .use(mplTokenMetadata())
-    .use(irysUploader());
+  // We could do
+  //   const collectionAddress = new PublicKey();
+  // to make a web.js PublicKey, and then use
+  //   publicKey(collectionAddress)
+  // to convert it to a Umi PublicKey
+  // but we can also just make the a Umi publicKey directly
+  // using the Umi publicKey() function
+  const collectionAddress = publicKey("4GDeLZGnNkSkM9hzMARMS2EoFeKacUeXBuXUSVMXrfpD");
 
-  // Substitute in your collection NFT address from create-metaplex-nft-collection.ts
-  const collectionNftAddress = UMIPublicKey("4GDeLZGnNkSkM9hzMARMS2EoFeKacUeXBuXUSVMXrfpD");
-
-  // example data and metadata for our NFT
-  const nftData = {
-    name: "My NFT",
-    symbol: "MN",
-    description: "My NFT Description",
-    sellerFeeBasisPoints: 0,
-    imageFile: "nft.png",
-    tokenOwner: owner,
-  };
-
-
-  const NFTImagePath = path.resolve(__dirname, "/home/esh/projects/figma_clone/figma_clone/nft.png");
   const buff = await sharp(Buffer.from(svgstr)).png().toBuffer();
 
-  const buffer = await fs.readFile(NFTImagePath);
   let file = createGenericFile(buff, "nft.png", {
     contentType: "image/png",
   });
@@ -78,7 +71,6 @@ export async function mintNft(ownerid: String, svgstr: String) {
   const [image] = await umi.uploader.upload([file]);
   console.log("image uri:", image);
 
-  // upload offchain json using irys and get metadata uri
   const uri = await umi.uploader.uploadJson({
     name: "My NFT",
     symbol: "MN",
@@ -88,26 +80,33 @@ export async function mintNft(ownerid: String, svgstr: String) {
   console.log("NFT offchain metadata URI:", uri);
 
 
-  // generate mint keypair
+  // Generate an NFT
+  console.log(`Creating NFT...`);
   const mint = generateSigner(umi);
-
-  // create and mint NFT
-  await createNft(umi, {
+  const transaction = await createNft(umi, {
     mint,
     name: "My NFT",
-    symbol: "MN",
+    // See https://developers.metaplex.com/token-metadata/token-standard#the-non-fungible-standard
     uri,
-    updateAuthority: umi.identity.publicKey,
     sellerFeeBasisPoints: percentAmount(0),
     collection: {
-      key: collectionNftAddress,
+      // See https://developers.metaplex.com/umi/public-keys-and-signers
+      key: collectionAddress,
       verified: false,
     },
-    tokenOwner: owner,
-  }).sendAndConfirm(umi, { send: { commitment: "finalized" } });
+  });
 
-  let explorerLink = getExplorerLink("address", mint.publicKey, "devnet");
-  console.log(`Token Mint:  ${explorerLink}`);
+  await transaction.sendAndConfirm(umi);
 
+  const createdNft = await fetchDigitalAsset(umi, mint.publicKey);
+
+  console.log(
+    `✨🖼️ Created NFT! Address is: ${getExplorerLink(
+      "address",
+      createdNft.mint.publicKey,
+      "devnet"
+    )}`
+  );
+
+  console.log("✅ Finished successfully!");
 }
-

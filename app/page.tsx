@@ -29,7 +29,7 @@ export default function App() {
     }
 
     if (!editor.canvas.__eventListeners["mouse:wheel"]) {
-      editor.canvas.on("mouse:wheel", function(opt) {
+      editor.canvas.on("mouse:wheel", function (opt) {
         var delta = opt.e.deltaY;
         var zoom = editor.canvas.getZoom();
         zoom *= 0.999 ** delta;
@@ -42,7 +42,7 @@ export default function App() {
     }
 
     if (!editor.canvas.__eventListeners["mouse:down"]) {
-      editor.canvas.on("mouse:down", function(opt) {
+      editor.canvas.on("mouse:down", function (opt) {
         var evt = opt.e;
         if (evt.ctrlKey === true) {
           this.isDragging = true;
@@ -54,7 +54,7 @@ export default function App() {
     }
 
     if (!editor.canvas.__eventListeners["mouse:move"]) {
-      editor.canvas.on("mouse:move", function(opt) {
+      editor.canvas.on("mouse:move", function (opt) {
         if (this.isDragging) {
           var e = opt.e;
           var vpt = this.viewportTransform;
@@ -68,7 +68,7 @@ export default function App() {
     }
 
     if (!editor.canvas.__eventListeners["mouse:up"]) {
-      editor.canvas.on("mouse:up", function(opt) {
+      editor.canvas.on("mouse:up", function (opt) {
         // on mouse up we want to recalculate new interaction
         // for all objects, so we call setViewportTransform
         this.setViewportTransform(this.viewportTransform);
@@ -253,7 +253,6 @@ export default function App() {
   return (
     <div className="flex h-screen w-screen">
       <AppBar />
-      <MintButton />
       {/* Sidebar Toggle Button */}
       <button
         onClick={() => setIsOpen(!isOpen)}
