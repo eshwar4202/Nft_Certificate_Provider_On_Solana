@@ -4,7 +4,6 @@ import {
   mplTokenMetadata,
   verifyCollectionV1,
 } from "@metaplex-foundation/mpl-token-metadata";
-import { SerializedTransaction } from '@metaplex-foundation/umi';
 import { base64 } from '@metaplex-foundation/umi/serializers';
 import {
   createGenericFile,
@@ -12,122 +11,106 @@ import {
   keypairIdentity,
   percentAmount,
   publicKey as UMIPublicKey,
-  TransactionBuilder,
 } from "@metaplex-foundation/umi";
 import { createUmi } from "@metaplex-foundation/umi-bundle-defaults";
 import { irysUploader } from "@metaplex-foundation/umi-uploader-irys";
 import {
   airdropIfRequired,
-  getExplorerLink,
   getKeypairFromFile,
 } from "@solana-developers/helpers";
 import { clusterApiUrl, Connection, LAMPORTS_PER_SOL } from "@solana/web3.js";
-import { promises as fs } from "fs";
-import * as path from "path";
 import { PublicKey } from "@solana/web3.js";
 import sharp from "sharp";
-// create a new connection to Solana's devnet clusterApiUrl
-//
+
 export async function mintNft(ownerid: string, svgstr: string) {
-  const owner = new PublicKey(ownerid);
-  const connection = new Connection(clusterApiUrl("devnet"));
+  try {
+    // Validate inputs
+    if (!ownerid || !svgstr) {
+      throw new Error("Invalid input: ownerid and svgstr are required");
+    }
 
-  // load keypair from local file system
-  // assumes that the keypair is already generated using `solana-keygen new`
-  const user = await getKeypairFromFile();
-  console.log("Loaded user:", user.publicKey.toBase58());
+    const owner = new PublicKey(ownerid);
+    const connection = new Connection(clusterApiUrl("devnet"), "confirmed");
 
-  await airdropIfRequired(
-    connection,
-    user.publicKey,
-    1 * LAMPORTS_PER_SOL,
-    0.1 * LAMPORTS_PER_SOL,
-  );
+    // Load keypair from local file system
+    const user = await getKeypairFromFile();
+    console.log("Loaded user:", user.publicKey.toBase58());
 
-  const umi = createUmi(connection);
+    // Ensure the user has enough SOL
+    await airdropIfRequired(
+      connection,
+      user.publicKey,
+      1 * LAMPORTS_PER_SOL,
+      0.1 * LAMPORTS_PER_SOL,
+    );
 
-  // convert to umi compatible keypair
-  const umiKeypair = umi.eddsa.createKeypairFromSecretKey(user.secretKey);
+    // Initialize UMI
+    const umi = createUmi(connection);
 
-  // load our plugins and signer
-  umi
-    .use(keypairIdentity(umiKeypair))
-    .use(mplTokenMetadata())
-    .use(irysUploader());
+    // Create UMI keypair from Solana keypair
+    const umiKeypair = umi.eddsa.createKeypairFromSecretKey(user.secretKey);
 
-  // Substitute in your collection NFT address from create-metaplex-nft-collection.ts
-  const collectionNftAddress = UMIPublicKey("4GDeLZGnNkSkM9hzMARMS2EoFeKacUeXBuXUSVMXrfpD");
+    // Apply plugins to UMI
+    umi
+      .use(keypairIdentity(umiKeypair))
+      .use(mplTokenMetadata())
+      .use(irysUploader());
 
-  // example data and metadata for our NFT
-  const nftData = {
-    name: "My NFT",
-    symbol: "MN",
-    description: "My NFT Description",
-    sellerFeeBasisPoints: 0,
-    imageFile: "nft.png",
-    tokenOwner: owner,
-  };
+    // Collection NFT address
+    const collectionNftAddress = UMIPublicKey("4GDeLZGnNkSkM9hzMARMS2EoFeKacUeXBuXUSVMXrfpD");
 
+    // Convert SVG to PNG buffer
+    const buffer = await sharp(Buffer.from(svgstr))
+      .flatten({ background: "#ffffff" })
+      .png()
+      .toBuffer();
 
-  const NFTImagePath = path.resolve(__dirname, "/home/esh/projects/figma_clone/figma_clone/nft.png");
-  const buff = await sharp(Buffer.from(svgstr)).flatten({ background: "#ffffff" }).png().toBuffer();
+    // Create generic file for upload
+    const file = createGenericFile(buffer, "nft.png", {
+      contentType: "image/png",
+    });
 
-  const buffer = await fs.readFile(NFTImagePath);
-  let file = createGenericFile(buff, "nft.png", {
-    contentType: "image/png",
-  });
+    // Upload image and get image URI
+    const [image] = await umi.uploader.upload([file]);
+    console.log("Image URI:", image);
 
-  // upload image and get image uri
-  const [image] = await umi.uploader.upload([file]);
-  console.log("image uri:", image);
+    // Upload off-chain JSON metadata
+    const uri = await umi.uploader.uploadJson({
+      name: "My NFT",
+      symbol: "MN",
+      description: "My NFT Description",
+      image,
+    });
+    console.log("NFT off-chain metadata URI:", uri);
 
-  // upload offchain json using irys and get metadata uri
-  const uri = await umi.uploader.uploadJson({
-    name: "My NFT",
-    symbol: "MN",
-    description: "My NFT Description",
-    image,
-  });
-  console.log("NFT offchain metadata URI:", uri);
+    // Generate mint keypair
+    const mint = generateSigner(umi);
 
+    // Create and mint NFT
+    const builder = await createNft(umi, {
+      mint,
+      name: "My NFT",
+      symbol: "MN",
+      uri,
+      updateAuthority: umi.identity.publicKey,
+      sellerFeeBasisPoints: percentAmount(0),
+      collection: {
+        key: collectionNftAddress,
+        verified: false,
+      },
+    });
 
-  // generate mint keypair
-  const mint = generateSigner(umi);
+    // Build and serialize transaction
+    const tx = await builder.buildWithLatestBlockhash(umi);
+    const serializedTx = Buffer.from(umi.transactions.serialize(tx)).toString("base64");
+    console.log("Serialized transaction:", serializedTx);
 
-  // create and mint NFT
-  const builder = await createNft(umi, {
-    mint,
-    name: "My NFT",
-    symbol: "MN",
-    uri,
-    updateAuthority: umi.identity.publicKey,
-    sellerFeeBasisPoints: percentAmount(0),
-    collection: {
-      key: collectionNftAddress,
-      verified: false,
-    },
-  })
-
-  const tx = await builder.buildWithLatestBlockhash(umi);
-
-  // Serialize to base64
-  //const serializedTx = Buffer.from(tx.serialize()).toString("base64");
-  const serializedTx = umi.transactions.serialize(tx)
-  console.log("Returning JSON:", {
-    transaction: serializedTx,
-    mint: mint.publicKey.toString(),
-  });
-
-
-  return {
-    transaction: serializedTx,
-    mint: mint.publicKey.toString(),
-  };
-
-  //let explorerLink = getExplorerLink("address", mint.publicKey, "devnet");
-  //console.log(`Token Mint:  ${explorerLink}`);
-  //await fs.writeFile("test-output.png", buff);
-
-
+    return {
+      transaction: serializedTx,
+      mint: mint.publicKey.toString(),
+    };
+  } catch (error) {
+    console.error("Error minting NFT:", error);
+    throw new Error(`Failed to mint NFT: ${error.message}`);
+  }
 }
-
