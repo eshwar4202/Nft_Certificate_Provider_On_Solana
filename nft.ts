@@ -4,12 +4,15 @@ import {
   mplTokenMetadata,
   verifyCollectionV1,
 } from "@metaplex-foundation/mpl-token-metadata";
+import { SerializedTransaction } from '@metaplex-foundation/umi';
+import { base64 } from '@metaplex-foundation/umi/serializers';
 import {
   createGenericFile,
   generateSigner,
   keypairIdentity,
   percentAmount,
   publicKey as UMIPublicKey,
+  TransactionBuilder,
 } from "@metaplex-foundation/umi";
 import { createUmi } from "@metaplex-foundation/umi-bundle-defaults";
 import { irysUploader } from "@metaplex-foundation/umi-uploader-irys";
@@ -25,7 +28,7 @@ import { PublicKey } from "@solana/web3.js";
 import sharp from "sharp";
 // create a new connection to Solana's devnet clusterApiUrl
 //
-export async function mintNft(ownerid: String, svgstr: String) {
+export async function mintNft(ownerid: string, svgstr: string) {
   const owner = new PublicKey(ownerid);
   const connection = new Connection(clusterApiUrl("devnet"));
 
@@ -92,7 +95,7 @@ export async function mintNft(ownerid: String, svgstr: String) {
   const mint = generateSigner(umi);
 
   // create and mint NFT
-  await createNft(umi, {
+  const builder = await createNft(umi, {
     mint,
     name: "My NFT",
     symbol: "MN",
@@ -103,11 +106,27 @@ export async function mintNft(ownerid: String, svgstr: String) {
       key: collectionNftAddress,
       verified: false,
     },
-  }).sendAndConfirm(umi, { send: { commitment: "finalized" } });
+  })
 
-  let explorerLink = getExplorerLink("address", mint.publicKey, "devnet");
-  console.log(`Token Mint:  ${explorerLink}`);
-  await fs.writeFile("test-output.png", buff);
+  const tx = await builder.buildWithLatestBlockhash(umi);
+
+  // Serialize to base64
+  //const serializedTx = Buffer.from(tx.serialize()).toString("base64");
+  const serializedTx = umi.transactions.serialize(tx)
+  console.log("Returning JSON:", {
+    transaction: serializedTx,
+    mint: mint.publicKey.toString(),
+  });
+
+
+  return {
+    transaction: serializedTx,
+    mint: mint.publicKey.toString(),
+  };
+
+  //let explorerLink = getExplorerLink("address", mint.publicKey, "devnet");
+  //console.log(`Token Mint:  ${explorerLink}`);
+  //await fs.writeFile("test-output.png", buff);
 
 
 }

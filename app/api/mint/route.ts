@@ -15,9 +15,9 @@ export async function POST(req: NextRequest) {
     }
 
     // 👇 Step 3: Pass ownerId to mintNft
-    await mintNft(ownerId, img);
+    const { transaction, mint } = await mintNft(ownerId, img);
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ transaction, mint, });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message });
   }

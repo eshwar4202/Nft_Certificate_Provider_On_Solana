@@ -10,8 +10,13 @@ import { AppBar } from '../components/AppBar'
 import { BalanceDisplay } from '../components/BalanceDisplay'
 import { PingButton } from '../components/PingButton'
 import Head from 'next/head'
+import { useConnection, useWallet } from '@solana/wallet-adapter-react';
+import { Transaction } from "@solana/web3.js";
+
 
 export default function App() {
+  const { connection } = useConnection();
+  const { publicKey, sendTransaction } = useWallet();
   const { editor, onReady } = useFabricJSEditor();
 
   const history = [];
@@ -29,7 +34,7 @@ export default function App() {
     }
 
     if (!editor.canvas.__eventListeners["mouse:wheel"]) {
-      editor.canvas.on("mouse:wheel", function (opt) {
+      editor.canvas.on("mouse:wheel", function(opt) {
         var delta = opt.e.deltaY;
         var zoom = editor.canvas.getZoom();
         zoom *= 0.999 ** delta;
@@ -42,7 +47,7 @@ export default function App() {
     }
 
     if (!editor.canvas.__eventListeners["mouse:down"]) {
-      editor.canvas.on("mouse:down", function (opt) {
+      editor.canvas.on("mouse:down", function(opt) {
         var evt = opt.e;
         if (evt.ctrlKey === true) {
           this.isDragging = true;
@@ -54,7 +59,7 @@ export default function App() {
     }
 
     if (!editor.canvas.__eventListeners["mouse:move"]) {
-      editor.canvas.on("mouse:move", function (opt) {
+      editor.canvas.on("mouse:move", function(opt) {
         if (this.isDragging) {
           var e = opt.e;
           var vpt = this.viewportTransform;
@@ -68,7 +73,7 @@ export default function App() {
     }
 
     if (!editor.canvas.__eventListeners["mouse:up"]) {
-      editor.canvas.on("mouse:up", function (opt) {
+      editor.canvas.on("mouse:up", function(opt) {
         // on mouse up we want to recalculate new interaction
         // for all objects, so we call setViewportTransform
         this.setViewportTransform(this.viewportTransform);
@@ -236,17 +241,37 @@ export default function App() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!publicKey) {
+      alert("Please connect your wallet first.");
+      return;
+    }
+
     const res = await fetch("/api/mint", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ownerId: formData.email, img: editor.canvas.toSVG() }),
+      body: JSON.stringify({ ownerId: formData.email, img: editor.canvas.toSVG(), tran: sendTransaction }),
     });
-    const json = await res.json();
-    if (json.success) {
-      alert("NFT minted!");
-    } else {
-      alert("Error: " + json.error);
+    const data = await res.json();
+    console.log("Response from backend:", data);
+    const b64tx = data.transaction;
+    console.log("Base64 Transaction string:", b64tx); // ✅ this will show the exact base64 string
+
+    // Only proceed if b64tx is a valid string
+    if (!b64tx || typeof b64tx !== "string") {
+      throw new Error("Invalid transaction received from backend");
     }
+
+    const tx = Transaction.from(Buffer.from(b64tx, "base64"));
+    const signature = await sendTransaction(tx, connection);
+    await connection.confirmTransaction(signature, "confirmed");
+
+    console.log("✅ NFT minted:", signature);
+    //const json = await res.json();
+    //if (json.success) {
+    //  alert("NFT minted!");
+    //} else {
+    //  alert("Error: " + json.error);
+    //}
   };
 
 
