@@ -21,8 +21,11 @@ import {
 import { clusterApiUrl, Connection, LAMPORTS_PER_SOL } from "@solana/web3.js";
 import { PublicKey } from "@solana/web3.js";
 import sharp from "sharp";
+import { signerIdentity, none } from "@metaplex-foundation/umi";
+import { publicKey, type Signer } from "@metaplex-foundation/umi";
 
-export async function mintNft(ownerid: string, svgstr: string) {
+
+export async function mintNft(ownerid: string, svgstr: string, pubkey: string) {
   try {
     // Validate inputs
     if (!ownerid || !svgstr) {
@@ -30,6 +33,7 @@ export async function mintNft(ownerid: string, svgstr: string) {
     }
 
     const owner = new PublicKey(ownerid);
+    const ownerAddress = pubkey;
     const connection = new Connection(clusterApiUrl("devnet"), "confirmed");
 
     // Load keypair from local file system
@@ -46,13 +50,25 @@ export async function mintNft(ownerid: string, svgstr: string) {
 
     // Initialize UMI
     const umi = createUmi(connection);
+    const dummySigner: Signer = {
+      publicKey: publicKey(ownerAddress), // Replace with the wallet public key
+      signMessage: async (message: Uint8Array) => {
+        throw new Error("Dummy signer cannot sign messages");
+      },
+      signTransaction: async () => {
+        throw new Error("Dummy signer cannot sign transactions");
+      },
+      signAllTransactions: async () => {
+        throw new Error("Dummy signer cannot sign transactions");
+      },
+    };
 
     // Create UMI keypair from Solana keypair
-    const umiKeypair = umi.eddsa.createKeypairFromSecretKey(user.secretKey);
+    //const umiKeypair = umi.eddsa.createKeypairFromSecretKey(user.secretKey);
+    //
 
     // Apply plugins to UMI
-    umi
-      .use(keypairIdentity(umiKeypair))
+    umi.use(signerIdentity(none()))
       .use(mplTokenMetadata())
       .use(irysUploader());
 

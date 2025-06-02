@@ -9,13 +9,14 @@ export async function POST(req: NextRequest) {
     // 👇 Step 2: Extract ownerId
     const { ownerId } = body;
     const { img } = body;
+    const { pubkey } = body
     console.log(img);
     if (!ownerId) {
       return NextResponse.json({ success: false, error: "Missing ownerId" });
     }
 
     // 👇 Step 3: Pass ownerId to mintNft
-    const { transaction, mint } = await mintNft(ownerId, img);
+    const { transaction, mint } = await mintNft(ownerId, img, pubkey);
 
     return NextResponse.json({ transaction, mint, });
   } catch (error: any) {
